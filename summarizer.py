@@ -27,13 +27,15 @@ class LLMProvider(str, Enum):
 
 
 # Modèle utilisé par tâche et par provider.
-# Ollama : "translate" est une simple tâche de texte libre (pas de JSON) → on peut
-# se permettre un petit modèle rapide. "analyze"/"report" passent par instructor en
-# mode JSON, où mistral s'est montré plus fiable que les petits modèles llama3.2
-# (moins de retries = au final plus rapide malgré un modèle plus gros).
+# Ollama : un seul modèle (mistral) pour les trois tâches. Testé en comparatif
+# (14 requêtes, 5 langues) : llama3.2:1b échoue sur 50% des traductions
+# (2 échecs complets), donc pas assez fiable pour un usage par défaut. mistral
+# étant déjà chargé pour l'analyse/le rapport, l'utiliser aussi pour traduire
+# évite un changement de modèle en cours de recherche — sans perte de vitesse
+# réelle une fois le modèle chaud en mémoire (~0.2s/traduction dans les deux cas).
 TASK_MODELS = {
     LLMProvider.OLLAMA: {
-        "translate": "llama3.2:1b",
+        "translate": "mistral",
         "analyze":   "mistral",
         "report":    "mistral",
     },

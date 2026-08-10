@@ -139,12 +139,12 @@ with st.sidebar:
                      "Needs reliable JSON output — a mid-size model (e.g. mistral) works best."
             )
             ollama_model_translate = st.text_input(
-                "Translation model (fast)",
+                "Translation model",
                 value=prefs.get("ollama_model_translate", ollama_model_translate),
-                help="Used only to translate your query to English — plain text, no JSON needed. "
-                     "A small/fast model works fine here (e.g. llama3.2:1b). "
-                     "Falls back to the analysis model automatically if not installed.\n\n"
-                     "Install with: `ollama pull llama3.2:1b`"
+                help="Used to translate your query to English. Defaults to the same model as "
+                     "analysis (mistral) — tested more reliable than small models like llama3.2:1b "
+                     "(50% failure rate across 14 queries in 5 languages) or qwen2.5:1.5b. "
+                     "Falls back to the analysis model automatically if the model set here isn't installed."
             )
 
     source_choices = st.multiselect(
