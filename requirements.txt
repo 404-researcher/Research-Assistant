@@ -1,0 +1,13 @@
+anthropic>=0.20.0
+openai>=1.0.0
+requests>=2.31.0
+streamlit>=1.32.0
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+instructor>=1.0.0
+
+# Optionnelles — l'app tourne sans elles mais désactive la fonctionnalité associée
+reportlab>=5.0.0   # export PDF du rapport (pdf_export.py)
+openpyxl>=3.1.5    # export Excel du rapport (excel_export.py)
+pymupdf>=1.28.2    # extraction de texte des PDF uploadés (pdf_upload.py)
+langdetect>=1.0.9  # détection/filtre de langue des articles (query_translation.py)

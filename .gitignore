@@ -1,0 +1,18 @@
+# Environnement virtuel
+.venv/
+
+# Secrets — clés API, ne jamais committer
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# IDE / outils locaux
+.idea/
+.claude/
+
+# Données générées à l'exécution (résultats de recherche, historique, préférences locales)
+history_files/
+history.json
+preferences.json
