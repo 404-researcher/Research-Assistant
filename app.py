@@ -7,8 +7,10 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import io
 import json
 import socket
+import zipfile
 from pathlib import Path
 import streamlit as st
 
@@ -54,6 +56,10 @@ if "search_results" not in st.session_state:
     st.session_state.search_results = None   # dict avec summaries, report, fichiers
 if "compare_results" not in st.session_state:
     st.session_state.compare_results = None  # dict avec résultats A et B
+if "pending_translation" not in st.session_state:
+    st.session_state.pending_translation = None  # traduction en attente de validation
+if "translation_review_id" not in st.session_state:
+    st.session_state.translation_review_id = 0  # force le reset du champ éditable à chaque nouvelle traduction
 
 SOURCE_ICONS = {
     "arXiv": "📚", "Semantic Scholar": "🎓", "CrossRef": "🌐",
@@ -82,6 +88,21 @@ def load_prefs():
 
 def save_prefs(prefs):
     PREFS_FILE.write_text(json.dumps(prefs, ensure_ascii=False, indent=2))
+
+# ── Export groupé ─────────────────────────────────────────────────────────────
+
+def build_zip(filename_base, citations_text, citation_fmt, markdown_report, pdf_bytes, xl_bytes):
+    """Empaquette citations + rapport (Markdown/PDF/Excel) dans un seul .zip."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        cite_ext = "bib" if citation_fmt == "BibTeX" else "txt"
+        zf.writestr(f"citations_{filename_base}.{cite_ext}", citations_text)
+        zf.writestr(f"report_{filename_base}.md", markdown_report)
+        if pdf_bytes:
+            zf.writestr(f"report_{filename_base}.pdf", pdf_bytes)
+        if xl_bytes:
+            zf.writestr(f"report_{filename_base}.xlsx", xl_bytes)
+    return buf.getvalue()
 
 prefs = load_prefs()
 
@@ -243,14 +264,21 @@ def run_search_and_display(
     auto_translate=True, article_lang_code=None,
     save_to_history=True, key_prefix="",
     ollama_model_analyze=None, ollama_model_translate=None,
+    pre_translated_query=None,
 ):
     analyze_model = ollama_model_analyze if provider == LLMProvider.OLLAMA else None
     translate_model = ollama_model_translate if provider == LLMProvider.OLLAMA else None
 
     # ── Traduction de la requête ──────────────────────────────────────────────
+    # Si une traduction déjà validée (et potentiellement corrigée) par l'utilisateur
+    # est fournie, on l'utilise directement sans retraduire.
     search_query = query
     translated_text = None
-    if auto_translate:
+    if pre_translated_query is not None:
+        search_query = pre_translated_query
+        if pre_translated_query.strip().lower() != query.strip().lower():
+            translated_text = pre_translated_query
+    elif auto_translate:
         with st.spinner("🌐 Translating query to English..."):
             translated_query = translate_query_to_english(query, provider_choice, translate_model)
         if translated_query.lower().strip() != query.lower().strip():
@@ -431,8 +459,10 @@ def display_results(data: dict, key_prefix: str = ""):
     for paper, summary in filtered:
         color    = "🟢" if summary.relevance_score >= 7 else "🟡" if summary.relevance_score >= 4 else "🔴"
         src_icon = SOURCE_ICONS.get(paper.source, "📄")
+        nb_sources = len(paper.duplicate_sources)
+        dup_badge  = f" · found in {nb_sources} databases" if nb_sources > 1 else ""
         with st.expander(
-            f"{color} [{summary.relevance_score}/10] {paper.title}",
+            f"{color} [{summary.relevance_score}/10] {paper.title}{dup_badge}",
             expanded=summary.relevance_score >= 7,
         ):
             col_a, col_b = st.columns([3, 1])
@@ -446,6 +476,9 @@ def display_results(data: dict, key_prefix: str = ""):
             with col_b:
                 st.markdown("**Source**")
                 st.markdown(f"{src_icon} **{paper.source}**")
+                if nb_sources > 1:
+                    others = [s for s in paper.duplicate_sources if s != paper.source]
+                    st.caption(f"📚 Also found in: {', '.join(others)}")
                 if paper.authors:
                     st.markdown("**Authors**")
                     st.caption(", ".join(paper.authors[:3]))
@@ -489,6 +522,18 @@ def display_results(data: dict, key_prefix: str = ""):
     # ── Export ────────────────────────────────────────────────────────────────
     st.divider()
     st.subheader("⬇️ Download Report")
+
+    zip_bytes = build_zip(filename_base, citations_text, citation_fmt, markdown_report, pdf_bytes, xl_bytes)
+    st.download_button(
+        label="📦 Download All (ZIP)",
+        data=zip_bytes,
+        file_name=f"research_{filename_base}.zip",
+        mime="application/zip",
+        use_container_width=True,
+        key=f"{key_prefix}_zip",
+        type="primary",
+    )
+
     col_md, col_pdf, col_xl = st.columns(3)
 
     with col_md:
@@ -550,22 +595,82 @@ with tab_search:
     with col2:
         search_btn = st.button("🔍 Search", use_container_width=True, type="primary")
 
-    # Nouvelle recherche → on lance et on stocke
+    # Nouvelle recherche → si auto-traduction, on s'arrête d'abord sur une étape
+    # de relecture (la traduction sémantique peut dériver silencieusement) avant
+    # de lancer la recherche proprement dite.
     if search_btn and query:
-        result = run_search_and_display(
-            query, provider, provider_choice, source_choices,
-            max_results, year_min, year_max,
-            min_relevance=min_relevance, citation_fmt=citation_fmt,
-            auto_translate=auto_translate, article_lang_code=article_lang_code,
-            save_to_history=True, key_prefix="main",
-            ollama_model_analyze=ollama_model_analyze, ollama_model_translate=ollama_model_translate,
-        )
-        if result:
-            st.session_state.search_results = result
-            # Afficher immédiatement dans ce même run
-            display_results(result, key_prefix="main")
+        st.session_state.search_results = None
+        if auto_translate:
+            translate_model = ollama_model_translate if provider == LLMProvider.OLLAMA else None
+            with st.spinner("🌐 Translating query to English..."):
+                translated = translate_query_to_english(query, provider_choice, translate_model)
+            if translated.strip().lower() != query.strip().lower():
+                st.session_state.translation_review_id += 1
+                st.session_state.pending_translation = {"original": query, "translated": translated}
+            else:
+                st.session_state.pending_translation = None
+                result = run_search_and_display(
+                    query, provider, provider_choice, source_choices,
+                    max_results, year_min, year_max,
+                    min_relevance=min_relevance, citation_fmt=citation_fmt,
+                    auto_translate=auto_translate, article_lang_code=article_lang_code,
+                    save_to_history=True, key_prefix="main",
+                    ollama_model_analyze=ollama_model_analyze, ollama_model_translate=ollama_model_translate,
+                    pre_translated_query=query,
+                )
+                if result:
+                    st.session_state.search_results = result
+        else:
+            st.session_state.pending_translation = None
+            result = run_search_and_display(
+                query, provider, provider_choice, source_choices,
+                max_results, year_min, year_max,
+                min_relevance=min_relevance, citation_fmt=citation_fmt,
+                auto_translate=auto_translate, article_lang_code=article_lang_code,
+                save_to_history=True, key_prefix="main",
+                ollama_model_analyze=ollama_model_analyze, ollama_model_translate=ollama_model_translate,
+                pre_translated_query=query,
+            )
+            if result:
+                st.session_state.search_results = result
     elif search_btn:
         st.warning("Please enter a search topic.")
+
+    # ── Relecture de la traduction avant de lancer la recherche ───────────────
+    if st.session_state.pending_translation:
+        pending = st.session_state.pending_translation
+        st.info(f"🌐 Original query: **\"{pending['original']}\"**")
+        edited_query = st.text_input(
+            "Translated query — edit if the translation looks off, then confirm",
+            value=pending["translated"],
+            key=f"translated_edit_{st.session_state.translation_review_id}",
+        )
+        col_confirm, col_cancel = st.columns([3, 1])
+        with col_confirm:
+            confirm_btn = st.button("✅ Confirm & Search", type="primary",
+                                    use_container_width=True, key="confirm_translation")
+        with col_cancel:
+            cancel_btn = st.button("✖ Cancel", use_container_width=True, key="cancel_translation")
+
+        if confirm_btn:
+            original_query = pending["original"]
+            st.session_state.pending_translation = None
+            result = run_search_and_display(
+                original_query, provider, provider_choice, source_choices,
+                max_results, year_min, year_max,
+                min_relevance=min_relevance, citation_fmt=citation_fmt,
+                auto_translate=auto_translate, article_lang_code=article_lang_code,
+                save_to_history=True, key_prefix="main",
+                ollama_model_analyze=ollama_model_analyze, ollama_model_translate=ollama_model_translate,
+                pre_translated_query=edited_query,
+            )
+            if result:
+                st.session_state.search_results = result
+                display_results(result, key_prefix="main")
+        elif cancel_btn:
+            st.session_state.pending_translation = None
+            st.rerun()
+
     # Rerun suivant (ex: clic téléchargement) → on réaffiche depuis session_state
     elif st.session_state.search_results:
         display_results(st.session_state.search_results, key_prefix="main")

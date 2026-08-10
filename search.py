@@ -21,6 +21,10 @@ class Paper(BaseModel):
     year: Optional[int] = Field(default=None)
     url: Optional[str] = Field(default=None)
     source: str = Field(description="Source name")
+    duplicate_sources: list[str] = Field(
+        default_factory=list,
+        description="Autres sources ayant aussi retourné cet article (dédoublonnage inter-sources)",
+    )
 
 
 HEADERS = {"User-Agent": "ResearchAssistant/1.0 (educational project)"}
@@ -1258,17 +1262,96 @@ def search_base(query, max_results=5, year_min=None, year_max=None):
     return papers[:max_results]
 
 
-# ── Dédoublonnage ─────────────────────────────────────────────────────────────
+# ── Dédoublonnage inter-sources ───────────────────────────────────────────────
+# Clé de dédoublonnage : DOI si on peut l'extraire de l'URL (fiable, indépendant
+# de la casse/ponctuation du titre selon la source), sinon titre normalisé.
+# Quand plusieurs sources retournent le même article, on garde la version la plus
+# complète (année + auteurs + abstract les plus riches) et on liste les autres
+# sources dans `duplicate_sources` — signal de pertinence affiché dans l'UI.
 
 import re as _re
 
+_DOI_RE = _re.compile(r"doi\.org/(10\.\S+)", _re.IGNORECASE)
+
+
+def _extract_doi(url):
+    if not url:
+        return None
+    m = _DOI_RE.search(url)
+    if not m:
+        return None
+    return m.group(1).lower().rstrip("/.,")
+
+
+def _normalize_title(title):
+    t = title.lower().strip()
+    t = _re.sub(r"[^\w\s]", "", t)
+    t = _re.sub(r"\s+", " ", t)
+    return t[:100]
+
+
+def _completeness(paper):
+    return (1 if paper.year else 0, len(paper.authors), len(paper.abstract))
+
+
+class _UnionFind:
+    """Fusionne deux articles s'ils partagent le même DOI OU le même titre normalisé —
+    un article sans DOI doit quand même rejoindre le groupe d'un doublon qui, lui,
+    en a un, dès lors que les titres correspondent (matching transitif)."""
+
+    def __init__(self, n):
+        self.parent = list(range(n))
+
+    def find(self, x):
+        while self.parent[x] != x:
+            self.parent[x] = self.parent[self.parent[x]]
+            x = self.parent[x]
+        return x
+
+    def union(self, a, b):
+        ra, rb = self.find(a), self.find(b)
+        if ra != rb:
+            self.parent[ra] = rb
+
+
 def deduplicate(papers):
-    seen, unique = set(), []
-    for p in papers:
-        key = p.title.lower().strip()[:80]
-        if key not in seen:
-            seen.add(key)
-            unique.append(p)
+    n = len(papers)
+    uf = _UnionFind(n)
+
+    first_by_doi, first_by_title = {}, {}
+    for i, p in enumerate(papers):
+        doi = _extract_doi(p.url)
+        if doi:
+            if doi in first_by_doi:
+                uf.union(i, first_by_doi[doi])
+            else:
+                first_by_doi[doi] = i
+
+        title_key = _normalize_title(p.title)
+        if title_key in first_by_title:
+            uf.union(i, first_by_title[title_key])
+        else:
+            first_by_title[title_key] = i
+
+    groups, order = {}, []
+    for i in range(n):
+        root = uf.find(i)
+        if root not in groups:
+            groups[root] = []
+            order.append(root)
+        groups[root].append(papers[i])
+
+    unique = []
+    for root in order:
+        group = groups[root]
+        canonical = max(group, key=_completeness)
+        all_sources = []
+        for p in group:
+            if p.source not in all_sources:
+                all_sources.append(p.source)
+        if len(all_sources) > 1:
+            canonical = canonical.model_copy(update={"duplicate_sources": all_sources})
+        unique.append(canonical)
     return unique
 
 
