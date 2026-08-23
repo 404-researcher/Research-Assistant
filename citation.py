@@ -16,13 +16,15 @@ def to_apa(paper: Paper) -> str:
     if not authors:
         author_str = "Unknown Author"
     elif len(authors) == 1:
-        parts = authors[0].rsplit(" ", 1)
-        author_str = f"{parts[-1]}, {parts[0][0]}." if len(parts) > 1 else authors[0]
+        a = _clean(authors[0])
+        parts = a.rsplit(" ", 1)
+        author_str = f"{parts[-1]}, {parts[0][0]}." if len(parts) > 1 and parts[0] else a
     else:
         formatted = []
         for a in authors:
+            a = _clean(a)
             parts = a.rsplit(" ", 1)
-            formatted.append(f"{parts[-1]}, {parts[0][0]}." if len(parts) > 1 else a)
+            formatted.append(f"{parts[-1]}, {parts[0][0]}." if len(parts) > 1 and parts[0] else a)
         if len(paper.authors) > 6:
             author_str = ", ".join(formatted) + ", ... et al."
         else:
@@ -70,8 +72,9 @@ def to_ieee(paper: Paper) -> str:
     else:
         formatted = []
         for a in authors:
+            a = _clean(a)
             parts = a.rsplit(" ", 1)
-            if len(parts) > 1:
+            if len(parts) > 1 and parts[0]:
                 formatted.append(f"{parts[0][0]}. {parts[1]}")
             else:
                 formatted.append(a)
