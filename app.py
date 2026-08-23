@@ -25,7 +25,8 @@ from excel_export import generate_excel, OPENPYXL_AVAILABLE
 from pdf_upload import pdf_to_paper, PYMUPDF_AVAILABLE, PYPDF_AVAILABLE
 from query_translation import (
     translate_query_to_english, filter_by_language,
-    LANGUAGE_OPTIONS, detect_language, LANGDETECT_AVAILABLE
+    LANGUAGE_OPTIONS, SUMMARY_LANGUAGE_OPTIONS, LANG_CODE_TO_LABEL,
+    detect_language, LANGDETECT_AVAILABLE
 )
 
 PREFS_FILE = Path(__file__).parent / "preferences.json"
@@ -186,6 +187,14 @@ with st.sidebar:
     if not LANGDETECT_AVAILABLE:
         st.caption("⚠️ Install langdetect for language detection:\n`pip install langdetect`")
 
+    summary_lang = st.selectbox(
+        "Summary & report language",
+        options=list(SUMMARY_LANGUAGE_OPTIONS.keys()),
+        index=list(SUMMARY_LANGUAGE_OPTIONS.keys()).index(prefs.get("summary_lang", "English"))
+              if prefs.get("summary_lang", "English") in SUMMARY_LANGUAGE_OPTIONS else 0,
+        help="Language the AI uses to write per-article summaries and the synthesis report"
+    )
+
     st.divider()
     st.markdown("**Year filter**")
     use_year_filter = st.toggle("Enable filter", value=False)
@@ -207,6 +216,7 @@ with st.sidebar:
             "citation_fmt": citation_fmt,
             "auto_translate": auto_translate,
             "article_lang": article_lang,
+            "summary_lang": summary_lang,
             "ollama_model_analyze": ollama_model_analyze,
             "ollama_model_translate": ollama_model_translate,
         })
@@ -261,7 +271,7 @@ def run_search_and_display(
     query, provider, provider_choice, source_choices,
     max_results, year_min, year_max,
     min_relevance=0, citation_fmt="APA",
-    auto_translate=True, article_lang_code=None,
+    auto_translate=True, article_lang_code=None, summary_lang="English",
     save_to_history=True, key_prefix="",
     ollama_model_analyze=None, ollama_model_translate=None,
     pre_translated_query=None,
@@ -300,15 +310,23 @@ def run_search_and_display(
 
     if article_lang_code:
         papers_filtered_lang = filter_by_language(papers, article_lang_code)
-        if len(papers_filtered_lang) < len(papers):
-            st.info(f"🌍 Language filter: {len(papers) - len(papers_filtered_lang)} article(s) excluded")
-        papers = papers_filtered_lang if papers_filtered_lang else papers
+        nb_excluded = len(papers) - len(papers_filtered_lang)
+        if nb_excluded:
+            st.info(f"🌍 Language filter: {nb_excluded} article(s) excluded (not in "
+                    f"{LANG_CODE_TO_LABEL.get(article_lang_code, article_lang_code)})")
+        papers = papers_filtered_lang
+        if not papers:
+            st.warning(
+                f"No article found in {LANG_CODE_TO_LABEL.get(article_lang_code, article_lang_code)}. "
+                f"Try another language, broaden the sources, or disable the filter."
+            )
+            return None
 
     summaries = []
     progress = st.progress(0, text="Analyzing articles...")
     with st.spinner(f"Analyzing {len(papers)} article(s)..."):
         results = summarize_papers(
-            papers, query, provider, model=analyze_model,
+            papers, query, provider, model=analyze_model, summary_lang=summary_lang,
             on_progress=lambda done, total: progress.progress(
                 done / total, text=f"Article {done}/{total} analyzed"
             ),
@@ -346,7 +364,7 @@ def run_search_and_display(
     paper_summaries = [s for _, s in filtered]
     with st.spinner("Generating synthesis report..."):
         try:
-            report = generate_report(paper_summaries, query, provider, model=analyze_model)
+            report = generate_report(paper_summaries, query, provider, model=analyze_model, summary_lang=summary_lang)
         except Exception as e:
             st.error(f"Report generation error: {e}")
             return None
@@ -613,7 +631,7 @@ with tab_search:
                     query, provider, provider_choice, source_choices,
                     max_results, year_min, year_max,
                     min_relevance=min_relevance, citation_fmt=citation_fmt,
-                    auto_translate=auto_translate, article_lang_code=article_lang_code,
+                    auto_translate=auto_translate, article_lang_code=article_lang_code, summary_lang=summary_lang,
                     save_to_history=True, key_prefix="main",
                     ollama_model_analyze=ollama_model_analyze, ollama_model_translate=ollama_model_translate,
                     pre_translated_query=query,
@@ -626,7 +644,7 @@ with tab_search:
                 query, provider, provider_choice, source_choices,
                 max_results, year_min, year_max,
                 min_relevance=min_relevance, citation_fmt=citation_fmt,
-                auto_translate=auto_translate, article_lang_code=article_lang_code,
+                auto_translate=auto_translate, article_lang_code=article_lang_code, summary_lang=summary_lang,
                 save_to_history=True, key_prefix="main",
                 ollama_model_analyze=ollama_model_analyze, ollama_model_translate=ollama_model_translate,
                 pre_translated_query=query,
@@ -659,7 +677,7 @@ with tab_search:
                 original_query, provider, provider_choice, source_choices,
                 max_results, year_min, year_max,
                 min_relevance=min_relevance, citation_fmt=citation_fmt,
-                auto_translate=auto_translate, article_lang_code=article_lang_code,
+                auto_translate=auto_translate, article_lang_code=article_lang_code, summary_lang=summary_lang,
                 save_to_history=True, key_prefix="main",
                 ollama_model_analyze=ollama_model_analyze, ollama_model_translate=ollama_model_translate,
                 pre_translated_query=edited_query,
@@ -750,7 +768,7 @@ with tab_upload:
             with st.spinner("🤖 AI is performing a deep analysis of the article..."):
                 try:
                     upload_model = ollama_model_analyze if provider == LLMProvider.OLLAMA else None
-                    summary = summarize_uploaded_pdf(paper, full_text, effective_query, provider, model=upload_model)
+                    summary = summarize_uploaded_pdf(paper, full_text, effective_query, provider, model=upload_model, summary_lang=summary_lang)
                 except Exception as e:
                     st.error(f"Analysis error: {e}")
                     st.stop()
@@ -850,7 +868,7 @@ with tab_compare:
                 query_a, provider, provider_choice, source_choices,
                 max_results, year_min, year_max,
                 min_relevance=min_relevance, citation_fmt=citation_fmt,
-                auto_translate=auto_translate, article_lang_code=article_lang_code,
+                auto_translate=auto_translate, article_lang_code=article_lang_code, summary_lang=summary_lang,
                 save_to_history=True, key_prefix="cmp_a",
                 ollama_model_analyze=ollama_model_analyze, ollama_model_translate=ollama_model_translate,
             )
@@ -863,7 +881,7 @@ with tab_compare:
                 query_b, provider, provider_choice, source_choices,
                 max_results, year_min, year_max,
                 min_relevance=min_relevance, citation_fmt=citation_fmt,
-                auto_translate=auto_translate, article_lang_code=article_lang_code,
+                auto_translate=auto_translate, article_lang_code=article_lang_code, summary_lang=summary_lang,
                 save_to_history=True, key_prefix="cmp_b",
                 ollama_model_analyze=ollama_model_analyze, ollama_model_translate=ollama_model_translate,
             )

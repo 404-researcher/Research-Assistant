@@ -169,13 +169,16 @@ def call_llm(client, provider: LLMProvider, model: str, system: str,
 
 # ── Fonctions principales ─────────────────────────────────────────────────────
 
-def summarize_paper(paper: Paper, query: str, provider: LLMProvider, model: Optional[str] = None) -> PaperSummary:
+def summarize_paper(
+    paper: Paper, query: str, provider: LLMProvider, model: Optional[str] = None,
+    summary_lang: str = "English",
+) -> PaperSummary:
     client = get_client(provider)
     model = model or get_model(provider, "analyze")
 
     prompt = f"""Analyze the scientific article below.
 DO NOT invent information. Base your response ONLY on the provided text.
-IMPORTANT: Write your ENTIRE response in ENGLISH, regardless of the article's original language.
+IMPORTANT: Write your ENTIRE response in {summary_lang}, regardless of the article's original language.
 
 === ARTICLE ===
 Title: {paper.title}
@@ -189,16 +192,16 @@ User search query: "{query}"
 Respond ONLY with this JSON (no text before or after):
 {{
   "title": "<exact title of the article>",
-  "summary": "<4-5 sentence summary in English, covering the main objective, methodology, and results>",
+  "summary": "<4-5 sentence summary in {summary_lang}, covering the main objective, methodology, and results>",
   "key_points": ["<point 1>", "<point 2>", "<point 3>"],
   "relevance_score": <integer between 0 and 10>,
-  "relevance_reason": "<short explanation of relevance to the query, in English>"
+  "relevance_reason": "<short explanation of relevance to the query, in {summary_lang}>"
 }}"""
 
     system = (
         "You are a rigorous scientific research assistant. "
         "You analyze only the provided content, without inventing information. "
-        "You ALWAYS write in English, even if the article is in another language. "
+        f"You ALWAYS write in {summary_lang}, even if the article is in another language. "
         "You ALWAYS respond with a complete and valid JSON, no additional text outside the JSON."
     )
 
@@ -212,6 +215,7 @@ def summarize_papers(
     model: Optional[str] = None,
     max_workers: int = 4,
     on_progress: Optional[Callable[[int, int], None]] = None,
+    summary_lang: str = "English",
 ) -> list[Union[PaperSummary, Exception]]:
     """
     Résume une liste d'articles, dans l'ordre d'entrée.
@@ -229,7 +233,7 @@ def summarize_papers(
     if provider == LLMProvider.OLLAMA:
         for i, paper in enumerate(papers):
             try:
-                results[i] = summarize_paper(paper, query, provider, model)
+                results[i] = summarize_paper(paper, query, provider, model, summary_lang=summary_lang)
             except Exception as e:
                 results[i] = e
             if on_progress:
@@ -238,7 +242,7 @@ def summarize_papers(
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_idx = {
-            executor.submit(summarize_paper, paper, query, provider, model): i
+            executor.submit(summarize_paper, paper, query, provider, model, summary_lang=summary_lang): i
             for i, paper in enumerate(papers)
         }
         done = 0
@@ -280,6 +284,7 @@ def summarize_uploaded_pdf(
     query: str,
     provider: LLMProvider,
     model: Optional[str] = None,
+    summary_lang: str = "English",
 ) -> UploadedPaperSummary:
     """
     Analyse approfondie d'un PDF uploadé.
@@ -294,7 +299,7 @@ def summarize_uploaded_pdf(
 
     prompt = f"""You are an expert scientific reviewer. Analyze the full text of this article in depth.
 DO NOT invent information. Base your response ONLY on the provided text.
-Write your ENTIRE response in ENGLISH.
+Write your ENTIRE response in {summary_lang}.
 
 === ARTICLE FULL TEXT ===
 Title: {paper.title}
@@ -335,7 +340,7 @@ Provide a thorough analysis. Respond ONLY with this JSON (no text before or afte
     system = (
         "You are an expert scientific reviewer with deep knowledge across multiple disciplines. "
         "You provide thorough, accurate analyses based strictly on the provided text. "
-        "You ALWAYS write in English and ALWAYS respond with a complete and valid JSON."
+        f"You ALWAYS write in {summary_lang} and ALWAYS respond with a complete and valid JSON."
     )
 
     if provider == LLMProvider.ANTHROPIC:
@@ -359,7 +364,8 @@ Provide a thorough analysis. Respond ONLY with this JSON (no text before or afte
 
 
 def generate_report(
-    summaries: list[PaperSummary], query: str, provider: LLMProvider, model: Optional[str] = None
+    summaries: list[PaperSummary], query: str, provider: LLMProvider, model: Optional[str] = None,
+    summary_lang: str = "English",
 ) -> ResearchReport:
     client = get_client(provider)
     model = model or get_model(provider, "report")
@@ -374,13 +380,13 @@ def generate_report(
 
     prompt = f"""Synthesize the following articles on the topic: "{query}"
 
-CRITICAL: You MUST write your entire report in ENGLISH. Never use any other language.
+CRITICAL: You MUST write your entire report in {summary_lang}. Never use any other language.
 
 === ARTICLES ===
 {summaries_text}
 === END ARTICLES ===
 
-Respond ONLY with this JSON (no text before or after), all values in English:
+Respond ONLY with this JSON (no text before or after), all values in {summary_lang}:
 {{
   "introduction": "<general introduction on the topic, 4-5 sentences>",
   "main_themes": ["<theme 1>", "<theme 2>", "<theme 3>"],
@@ -392,7 +398,7 @@ Respond ONLY with this JSON (no text before or after), all values in English:
 
     system = (
         "You are an expert researcher in bibliographic synthesis. "
-        "You MUST write exclusively in English. Never use any other language. "
+        f"You MUST write exclusively in {summary_lang}. Never use any other language. "
         "You ALWAYS respond with a complete and valid JSON, no additional text."
     )
 

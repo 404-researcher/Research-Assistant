@@ -36,6 +36,10 @@ LANGUAGE_OPTIONS = {
 
 LANG_CODE_TO_LABEL = {v: k for k, v in LANGUAGE_OPTIONS.items() if v}
 
+# Langues proposées pour la rédaction des résumés/rapport (pas de "Any language" ici,
+# il faut toujours une langue cible précise pour le LLM).
+SUMMARY_LANGUAGE_OPTIONS = {k: v for k, v in LANGUAGE_OPTIONS.items() if v}
+
 
 # ── Détection de langue ───────────────────────────────────────────────────────
 
@@ -51,20 +55,24 @@ def detect_language(text: str) -> Optional[str]:
 
 def filter_by_language(papers: list[Paper], lang_code: Optional[str]) -> list[Paper]:
     """
-    Filtre les articles par langue détectée sur l'abstract.
+    Filtre les articles par langue détectée (titre + abstract, pour un texte plus
+    long donc une détection plus fiable que sur l'abstract seul).
     Si lang_code est None, retourne tous les articles.
+    Retourne la liste réellement filtrée, y compris vide : le caller décide quoi
+    afficher plutôt que de silencieusement remontrer des articles dans la mauvaise langue.
     """
     if not lang_code:
         return papers
 
     filtered = []
     for paper in papers:
-        detected = detect_language(paper.abstract)
+        text = f"{paper.title} {paper.abstract}".strip()
+        detected = detect_language(text)
         # Si on ne peut pas détecter → on garde l'article (bénéfice du doute)
         if detected is None or detected == lang_code:
             filtered.append(paper)
 
-    return filtered if filtered else papers  # fallback : tous si filtre trop strict
+    return filtered
 
 
 # ── Traduction de requête ─────────────────────────────────────────────────────
