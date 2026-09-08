@@ -18,6 +18,7 @@ echo Lancement de Research Assistant...
 echo Le navigateur va s'ouvrir automatiquement dans quelques secondes.
 echo.
 echo Rappel : pour utiliser Ollama (mode local gratuit), lancez "ollama serve" avant de chercher.
+echo Pour utiliser OpenAI, Anthropic ou Mistral, renseignez la cle API correspondante dans le fichier .env.
 echo Pour arreter l'application : fermez cette fenetre, ou Ctrl+C.
 echo.
 
