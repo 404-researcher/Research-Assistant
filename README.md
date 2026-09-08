@@ -38,7 +38,7 @@ Nothing about your topic or results is stored anywhere except on your own machin
   - **[Ollama](https://ollama.com)** — free, runs entirely on your machine, no API key. Recommended to get started.
   - **OpenAI API key** — paid, requires an account at [platform.openai.com](https://platform.openai.com).
   - **Anthropic API key** — paid, requires an account at [console.anthropic.com](https://console.anthropic.com).
-  - **Mistral API key** — paid, requires an account at [console.mistral.ai](https://console.mistral.ai).
+  - **Mistral API key** — offers a free tier (paid plans also available), requires an account at [console.mistral.ai](https://console.mistral.ai).
 
 ## Installation
 

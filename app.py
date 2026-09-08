@@ -120,7 +120,7 @@ with st.sidebar:
             "ollama":    "🦙 Ollama (free, local)",
             "openai":    "🟢 OpenAI (paid)",
             "anthropic": "🟠 Anthropic (paid)",
-            "mistral":   "🔶 Mistral (paid)",
+            "mistral":   "🔶 Mistral (free tier available)",
         }[x]
     )
     provider = LLMProvider(provider_choice)
