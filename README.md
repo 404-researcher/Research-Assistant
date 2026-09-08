@@ -134,7 +134,7 @@ They're already listed in `requirements.txt`, so a normal `pip install -r requir
 
 ## Contributing
 
-Issues and pull requests are welcome — this started as a personal project and is shared in the hope it's useful to other students and researchers. Feel free to suggest a new database source, a bug fix, or a UI improvement.
+Issues and pull requests are welcome — this started as a personal project and is shared in the hope it's useful to other students and researchers. Feel free to suggest a new database source, a bug fix, or a UI improvement. See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow.
 
 ## License
 
