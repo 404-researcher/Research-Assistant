@@ -114,12 +114,13 @@ with st.sidebar:
 
     provider_choice = st.selectbox(
         "LLM Model",
-        options=["ollama", "openai", "anthropic"],
-        index=["ollama", "openai", "anthropic"].index(prefs.get("provider", "ollama")),
+        options=["ollama", "openai", "anthropic", "mistral"],
+        index=["ollama", "openai", "anthropic", "mistral"].index(prefs.get("provider", "ollama")),
         format_func=lambda x: {
             "ollama":    "🦙 Ollama (free, local)",
             "openai":    "🟢 OpenAI (paid)",
             "anthropic": "🟠 Anthropic (paid)",
+            "mistral":   "🔶 Mistral (paid)",
         }[x]
     )
     provider = LLMProvider(provider_choice)

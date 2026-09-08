@@ -145,6 +145,18 @@ def translate_query_to_english(
             )
             translated = response.choices[0].message.content.strip()
 
+        elif provider_choice == "mistral":
+            from openai import OpenAI
+            client = OpenAI(base_url="https://api.mistral.ai/v1", api_key=os.getenv("MISTRAL_API_KEY"))
+            model = model_name or "mistral-small-latest"
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=100,
+                temperature=0.1,
+            )
+            translated = response.choices[0].message.content.strip()
+
         elif provider_choice == "anthropic":
             from anthropic import Anthropic
             client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))

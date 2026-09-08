@@ -24,6 +24,7 @@ class LLMProvider(str, Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     OLLAMA = "ollama"
+    MISTRAL = "mistral"
 
 
 # Modèle utilisé par tâche et par provider.
@@ -49,6 +50,11 @@ TASK_MODELS = {
         "analyze":   "claude-3-5-haiku-20241022",
         "report":    "claude-3-5-haiku-20241022",
     },
+    LLMProvider.MISTRAL: {
+        "translate": "mistral-small-latest",
+        "analyze":   "mistral-small-latest",
+        "report":    "mistral-small-latest",
+    },
 }
 
 # Conservé pour compatibilité : modèle "principal" (tâche d'analyse) par provider.
@@ -68,6 +74,16 @@ def get_client(provider: LLMProvider):
     elif provider == LLMProvider.ANTHROPIC:
         from anthropic import Anthropic
         return instructor.from_anthropic(Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY")))
+
+    elif provider == LLMProvider.MISTRAL:
+        from openai import OpenAI
+        # L'API Mistral est compatible OpenAI (même format de requête/réponse) —
+        # on réutilise le client OpenAI avec un base_url différent, comme pour Ollama.
+        client = OpenAI(
+            base_url="https://api.mistral.ai/v1",
+            api_key=os.getenv("MISTRAL_API_KEY"),
+        )
+        return instructor.from_openai(client, mode=Mode.JSON)
 
     elif provider == LLMProvider.OLLAMA:
         from openai import OpenAI
